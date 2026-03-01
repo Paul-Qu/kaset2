@@ -89,54 +89,14 @@ jobs:
           VERSION="${GITHUB_REF_NAME:-dev}"
           mkdir -p release
 
-          # Raw universal binary
           cp dist/api-explorer release/api-explorer
-
-          # Installable ZIP bundle (CLI tool + installer script)
-          BUNDLE_DIR="release/api-explorer-${VERSION}-macos-universal"
-          mkdir -p "$BUNDLE_DIR"
-          cp dist/api-explorer "$BUNDLE_DIR/api-explorer"
-          chmod +x "$BUNDLE_DIR/api-explorer"
-
-          printf '%s\n' \
-            '#!/usr/bin/env bash' \
-            'set -euo pipefail' \
-            '' \
-            'BIN_DIR="${BIN_DIR:-/usr/local/bin}"' \
-            'TOOL_NAME="api-explorer"' \
-            'SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
-            '' \
-            'mkdir -p "$BIN_DIR"' \
-            'install -m 0755 "$SRC_DIR/$TOOL_NAME" "$BIN_DIR/$TOOL_NAME"' \
-            '' \
-            'echo "Installed $TOOL_NAME to $BIN_DIR/$TOOL_NAME"' \
-            'echo "Run: $TOOL_NAME --help"' \
-            > "$BUNDLE_DIR/install.sh"
-          chmod +x "$BUNDLE_DIR/install.sh"
-
-          printf '%s\n' \
-            "api-explorer (${VERSION})" \
-            '' \
-            'Install on macOS:' \
-            '  1) unzip this file' \
-            "  2) cd api-explorer-${VERSION}-macos-universal" \
-            '  3) ./install.sh' \
-            '' \
-            'If /usr/local/bin requires admin permissions:' \
-            '  sudo ./install.sh' \
-            '' \
-            'The installer copies the universal binary to /usr/local/bin/api-explorer.' \
-            > "$BUNDLE_DIR/README.txt"
-
-          tar -czf "release/api-explorer-${VERSION}-macos-universal.tar.gz" -C release api-explorer
-          ditto -c -k --sequesterRsrc --keepParent \
-            "$BUNDLE_DIR" \
-            "release/api-explorer-${VERSION}-macos-universal.zip"
+          tar -czf release/api-explorer-${VERSION}-macos-universal.tar.gz -C release api-explorer
+          ditto -c -k --sequesterRsrc --keepParent release/api-explorer release/api-explorer-${VERSION}-macos-universal.zip
 
           shasum -a 256 \
-            "release/api-explorer-${VERSION}-macos-universal.tar.gz" \
-            "release/api-explorer-${VERSION}-macos-universal.zip" \
-            > "release/checksums-${VERSION}.txt"
+            release/api-explorer-${VERSION}-macos-universal.tar.gz \
+            release/api-explorer-${VERSION}-macos-universal.zip \
+            > release/checksums-${VERSION}.txt
 
       - name: Upload packaged artifacts
         uses: actions/upload-artifact@v4
@@ -149,18 +109,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           VERSION="${GITHUB_REF_NAME:-dev}"
-
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            gh release upload "$VERSION" \
-              "release/api-explorer-${VERSION}-macos-universal.tar.gz" \
-              "release/api-explorer-${VERSION}-macos-universal.zip" \
-              "release/checksums-${VERSION}.txt" \
-              --clobber
-          else
-            gh release create "$VERSION" \
-              --title "$VERSION" \
-              --notes "Automated release for tag $VERSION" \
-              "release/api-explorer-${VERSION}-macos-universal.tar.gz" \
-              "release/api-explorer-${VERSION}-macos-universal.zip" \
-              "release/checksums-${VERSION}.txt"
-          fi
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes "Automated release for tag $VERSION" \
+            release/api-explorer-${VERSION}-macos-universal.tar.gz \
+            release/api-explorer-${VERSION}-macos-universal.zip \
+            release/checksums-${VERSION}.txt
