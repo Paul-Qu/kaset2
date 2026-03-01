@@ -1,0 +1,166 @@
+name: Release on Tag
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13
+            arch: x86_64
+            label: Intel
+          - os: macos-14
+            arch: arm64
+            label: Apple Silicon
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          uname -m
+
+      - name: Build release binary
+        run: swift build -c release --product api-explorer
+
+      - name: Stage binary
+        run: |
+          mkdir -p dist
+          cp .build/release/api-explorer dist/api-explorer-${{ matrix.arch }}
+          chmod +x dist/api-explorer-${{ matrix.arch }}
+
+      - name: Upload per-arch artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-explorer-${{ matrix.arch }}
+          path: dist/api-explorer-${{ matrix.arch }}
+
+  package-universal:
+    name: Package universal binary
+    needs: build
+    runs-on: macos-13
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Intel artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: api-explorer-x86_64
+          path: dist
+
+      - name: Download Apple Silicon artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: api-explorer-arm64
+          path: dist
+
+      - name: Build universal binary
+        run: |
+          lipo -create \
+            dist/api-explorer-x86_64 \
+            dist/api-explorer-arm64 \
+            -output dist/api-explorer
+
+          chmod +x dist/api-explorer
+          lipo -info dist/api-explorer
+
+      - name: Smoke test universal binary
+        run: |
+          ./dist/api-explorer
+
+      - name: Package release artifacts
+        run: |
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          mkdir -p release
+
+          # Raw universal binary
+          cp dist/api-explorer release/api-explorer
+
+          # Installable ZIP bundle (CLI tool + installer script)
+          BUNDLE_DIR="release/api-explorer-${VERSION}-macos-universal"
+          mkdir -p "$BUNDLE_DIR"
+          cp dist/api-explorer "$BUNDLE_DIR/api-explorer"
+          chmod +x "$BUNDLE_DIR/api-explorer"
+
+          printf '%s\n' \
+            '#!/usr/bin/env bash' \
+            'set -euo pipefail' \
+            '' \
+            'BIN_DIR="${BIN_DIR:-/usr/local/bin}"' \
+            'TOOL_NAME="api-explorer"' \
+            'SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
+            '' \
+            'mkdir -p "$BIN_DIR"' \
+            'install -m 0755 "$SRC_DIR/$TOOL_NAME" "$BIN_DIR/$TOOL_NAME"' \
+            '' \
+            'echo "Installed $TOOL_NAME to $BIN_DIR/$TOOL_NAME"' \
+            'echo "Run: $TOOL_NAME --help"' \
+            > "$BUNDLE_DIR/install.sh"
+          chmod +x "$BUNDLE_DIR/install.sh"
+
+          printf '%s\n' \
+            "api-explorer (${VERSION})" \
+            '' \
+            'Install on macOS:' \
+            '  1) unzip this file' \
+            "  2) cd api-explorer-${VERSION}-macos-universal" \
+            '  3) ./install.sh' \
+            '' \
+            'If /usr/local/bin requires admin permissions:' \
+            '  sudo ./install.sh' \
+            '' \
+            'The installer copies the universal binary to /usr/local/bin/api-explorer.' \
+            > "$BUNDLE_DIR/README.txt"
+
+          tar -czf "release/api-explorer-${VERSION}-macos-universal.tar.gz" -C release api-explorer
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$BUNDLE_DIR" \
+            "release/api-explorer-${VERSION}-macos-universal.zip"
+
+          shasum -a 256 \
+            "release/api-explorer-${VERSION}-macos-universal.tar.gz" \
+            "release/api-explorer-${VERSION}-macos-universal.zip" \
+            > "release/checksums-${VERSION}.txt"
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: release/*
+
+      - name: Publish GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME:-dev}"
+
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" \
+              "release/api-explorer-${VERSION}-macos-universal.tar.gz" \
+              "release/api-explorer-${VERSION}-macos-universal.zip" \
+              "release/checksums-${VERSION}.txt" \
+              --clobber
+          else
+            gh release create "$VERSION" \
+              --title "$VERSION" \
+              --notes "Automated release for tag $VERSION" \
+              "release/api-explorer-${VERSION}-macos-universal.tar.gz" \
+              "release/api-explorer-${VERSION}-macos-universal.zip" \
+              "release/checksums-${VERSION}.txt"
+          fi
