@@ -1,10 +1,10 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 5.10
 import PackageDescription
 
 let package = Package(
     name: "kaset2",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v13),
     ],
     products: [
         .library(name: "KasetCore", targets: ["KasetCore"]),
