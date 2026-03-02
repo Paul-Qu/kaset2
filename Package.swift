@@ -8,10 +8,12 @@ let package = Package(
     ],
     products: [
         .library(name: "KasetCore", targets: ["KasetCore"]),
+        .executable(name: "KasetApp", targets: ["KasetApp"]),
         .executable(name: "api-explorer", targets: ["APIExplorer"]),
     ],
     targets: [
         .target(name: "KasetCore"),
+        .executableTarget(name: "KasetApp", dependencies: ["KasetCore"]),
         .executableTarget(name: "APIExplorer", dependencies: ["KasetCore"]),
         .testTarget(name: "KasetCoreTests", dependencies: ["KasetCore"]),
     ]
